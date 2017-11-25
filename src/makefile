@@ -5,7 +5,7 @@ CFLAGS=-Wall -g -fopenmp -I$(IDIR)
 ODIR=obj
 LDIR =../lib
 
-LIBS=-lm -lSDL2 -lSDL2_image
+LIBS=-lm -lSDL2 -lSDL2_image -lgsl -lgslcblas
 
 _DEPS =
 DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))

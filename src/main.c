@@ -15,10 +15,12 @@
 #include <string.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <gsl/gsl_rng.h>
+#include <gsl/gsl_errno.h>
 
 //Screen dimension constants
-const int SCREEN_WIDTH = 512;
-const int SCREEN_HEIGHT = 512;
+const int SCREEN_WIDTH = 800;
+const int SCREEN_HEIGHT = 800;
 
 //Starts up SDL and creates window
 bool init();
@@ -46,21 +48,21 @@ int main(int argc,char **argv)
 {
     int numOfNodes;
     int debug = 0;  // Debug
-    int x = 512; // x - dimension lattice sites
-    int y = 512; // y - dimension lattice sites
+    int x = 800; // x - dimension lattice sites
+    int y = 800; // y - dimension lattice sites
     int z = 1; // z - dimension latties sites
     double temperature = 0.0001; // Kelvin
-
+    int J = 1;
     //
     // Handle input arguments
     //
-
+    int numOfThreads;
     for(int i = 0; i < argc; i++)
     {
         switch (i)
         {
-            case 0: omp_set_num_threads(omp_get_max_threads()); break;
-            case 1: omp_set_num_threads(atoi(argv[i])); break;
+            case 0: numOfThreads = omp_get_max_threads(); break;
+            case 1: numOfThreads =  atoi(argv[i]); break;
             case 2: numOfNodes = *argv[i]; break;
             case 3: debug = 1; break;
             default: break;
@@ -68,6 +70,7 @@ int main(int argc,char **argv)
         }
     }
 
+    omp_set_num_threads(numOfThreads);
     if(debug == 1)
     {
         printf("Warning! Debug mode entered. Press any key to continue...\n");
@@ -104,6 +107,14 @@ int main(int argc,char **argv)
 
     randLattice(ising_lattice,x,y,z);
 
+    gsl_rng *rndarray[numOfThreads];
+    printf("%d\n", numOfThreads);
+    for(int i = 0; i<numOfThreads; i++)
+    {
+        rndarray[i] = gsl_rng_alloc(gsl_rng_taus);
+        gsl_rng_set(rndarray[i],i);
+    }
+
     //
     //
     //
@@ -111,205 +122,152 @@ int main(int argc,char **argv)
 
 	//Event handler
 	SDL_Event e;
-
 	//While application is running
 	while( !quit )
 	{
 
-		//Handle events on queue
-		while( SDL_PollEvent( &e ) != 0 )
-		{
-			//User requests quit
-			if( e.type == SDL_QUIT)
-			{
-				quit = true;
-			}
-            if( e.type == SDL_KEYDOWN)
+
+        #pragma omp parallel
+        {
+            gsl_rng *r = rndarray[omp_get_thread_num()];
+            #pragma omp single
             {
-                if( e.key.keysym.sym == SDLK_UP)
-    			{
-    				temperature+=0.01 ;
-                    printf("T = %lf\n", temperature);
+    		//Handle events on queue
+        		while( SDL_PollEvent( &e ) != 0 )
+        		{
+        			//User requests quit
+        			if( e.type == SDL_QUIT)
+        			{
+        				quit = true;
+        			}
+                    if( e.type == SDL_KEYDOWN)
+                    {
+                        if( e.key.keysym.sym == SDLK_UP)
+            			{
+            				temperature+=0.01 ;
+                            printf("T = %lf\n", temperature);
 
-    			}
-                if( e.key.keysym.sym  == SDLK_DOWN)
-    			{
-    				temperature-=0.01 ;
-                    printf("T = %lf\n", temperature);
-    			}
-                if( e.key.keysym.sym  == SDLK_RIGHT)
-    			{
-                    randLattice(ising_lattice,x,y,z);
-    			}
+            			}
+                        if( e.key.keysym.sym  == SDLK_DOWN)
+            			{
+            				temperature-=0.01 ;
+                            printf("T = %lf\n", temperature);
+            			}
+                        if( e.key.keysym.sym  == SDLK_RIGHT)
+            			{
+                            randLattice(ising_lattice,x,y,z);
+            			}
+                        if( e.key.keysym.sym  == SDLK_LEFT)
+            			{
+                            J*=-1;
+            			}
 
+                    }
+
+        		}
+
+
+                if(loop%100 == 0)
+                screenRenderfunc(ising_lattice,x,y);
+                //
+                // generate random point
+                //
             }
 
-		}
 
-        if(loop%100 == 0)
-        screenRenderfunc(ising_lattice,x,y);
+            int location = (double)gsl_rng_uniform(r) * x * y ;
+            int icolumn = location%y; // the remainder is the column number
+            int irow = (location - icolumn)/x  ;// number of rows
+            int temp;
 
-        //
-        // generate random point
-        //
 
-        int location = (rand()/(double)RAND_MAX) * x * y;
+            double dE = 0, E1=0, E2=0;
+            //
+            // Calculate energy of cell above
+            //
+            (irow == 0) ? (temp = x-1) : (temp = irow-1);
 
-        int icolumn = location%y; // the remainder is the column number
-        int irow = (location - icolumn)/x  ;// number of rows
-        int temp;
-
-        int J = 1;
-        //
-        // flip spin
-        //
-
-        //ising_lattice[location] *=-1 ;
-
-        //
-        // Calculate the energy change
-        //
-
-        double dE = 0, E1=0, E2=0;
-        //
-        // Calculate energy of cell above
-        //
-        (irow == 0) ? (temp = x-1) : (temp = irow-1);
-
-        E1+= J*ising_lattice[location] * ising_lattice[temp*x + icolumn]*(-1);
-
-        //
-        // Calculate energy of cell below
-        //
-        (irow == (x-1)) ? (temp = 0) : (temp = irow+1);
-
-        E1+= J*ising_lattice[location] * ising_lattice[temp*x + icolumn]*(-1);
-
-        //
-        // Calculate energy of cell left
-        //
-
-        (icolumn == 0) ? (temp = y-1) : (temp = icolumn-1);
-        E1+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);
-
-        //
-        // Calculate energy of cell right
-        //
-        (icolumn == (y-1)) ? (temp = 0) : (temp = icolumn+1);
-        E1+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);
-
-        //
-        // Flip the spin
-        //
-
-        ising_lattice[location] *=-1 ;
-
-        (irow == 0) ? (temp = x-1) : (temp = irow-1);
-
-        E2+= J*ising_lattice[location] * ising_lattice[temp*x + icolumn]*(-1);
-
-        //
-        // Calculate energy of cell below
-        //
-        (irow == (x-1)) ? (temp = 0) : (temp = irow+1);
-
-        E2+= J*ising_lattice[location] * ising_lattice[temp*x + icolumn]*(-1);
-
-        //
-        // Calculate energy of cell left
-        //
-
-        (icolumn == 0) ? (temp = y-1) : (temp = icolumn-1);
-        E2+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);
-
-        //
-        // Calculate energy of cell right
-        //
-        (icolumn == (y-1)) ? (temp = 0) : (temp = icolumn+1);
-        E2+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);
-
-        dE= E2 - E1;
-    /*    double Z = 0 ;
-
-        for(int k = 0; k < x*y ; k++)
-        {
-            int jy = k%x ;
-            int jx = (x*y -jx)/x;
-
-            int E=0;
-
-            (jx == 0) ? (temp = x-1) : (temp = jx-1);
-
-            E2+= ising_lattice[location] * ising_lattice[temp*x + y]*(-1);
+            E1+= J*ising_lattice[location] * ising_lattice[temp*x + icolumn]*(-1);
 
             //
             // Calculate energy of cell below
             //
-            (jx == (x-1)) ? (temp = 0) : (temp = jx+1);
+            (irow == (x-1)) ? (temp = 0) : (temp = irow+1);
 
-            E2+= ising_lattice[location] * ising_lattice[temp*x + y]*(-1);
+            E1+= J*ising_lattice[location] * ising_lattice[temp*x + icolumn]*(-1);
 
             //
             // Calculate energy of cell left
             //
 
-            (jy == 0) ? (temp = y-1) : (temp = jy-1);
-            E2+= ising_lattice[location] * ising_lattice[jx*x + temp]*(-1);
+            (icolumn == 0) ? (temp = y-1) : (temp = icolumn-1);
+            E1+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);
 
             //
             // Calculate energy of cell right
             //
-            (jy == (y-1)) ? (temp = 0) : (temp = jx+1);
-            E2+= ising_lattice[location] * ising_lattice[jx*x + temp]*(-1);
+            (icolumn == (y-1)) ? (temp = 0) : (temp = icolumn+1);
+            E1+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);
 
+            //
+            // Flip the spin
+            //
 
+            ising_lattice[location] *=-1 ;
 
-            Z += exp(beta * E);
-        }*/
+            (irow == 0) ? (temp = x-1) : (temp = irow-1);
 
-    //    printf("%g\n",dE);
+            E2+= J*ising_lattice[location] * ising_lattice[temp*x + icolumn]*(-1);
 
-    //    getchar() ;
+            //
+            // Calculate energy of cell below
+            //
+            (irow == (x-1)) ? (temp = 0) : (temp = irow+1);
 
+            E2+= J*ising_lattice[location] * ising_lattice[temp*x + icolumn]*(-1);
 
-        double U = rand()/(double)RAND_MAX;
-        double V = rand()/(double)RAND_MAX;
+            //
+            // Calculate energy of cell left
+            //
 
-        double z0 = sqrt(-2 * log(U)) * cos(2*gPi*V);
-        double z1 = sqrt(-2 * log(U)) * sin(2*gPi*V);
+            (icolumn == 0) ? (temp = y-1) : (temp = icolumn-1);
+            E2+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);
 
-        double guass = z1;
-        //printf("guass %lf\n",guass );
-        if( dE > 0)
-        {
+            //
+            // Calculate energy of cell right
+            //
+            (icolumn == (y-1)) ? (temp = 0) : (temp = icolumn+1);
+            E2+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);
 
-            double beta =1/temperature ;
+            dE= E2 - E1;
 
-            double prob = exp(beta *dE*(-1)) ;
-        //    printf(" prob = %g\n",prob);
+            double U = gsl_rng_uniform(r);
+            double V = gsl_rng_uniform(r);
 
-            if( prob < rand()/(double)RAND_MAX)
+            double z0 = sqrt(-2 * log(U)) * cos(2*gPi*V);
+            double z1 = sqrt(-2 * log(U)) * sin(2*gPi*V);
+
+            double guass = z1;
+            //printf("guass %lf\n",guass );
+            if( dE > 0)
             {
-            //    printf(" t = %g\n",dE);
-                ising_lattice[location]*= -1;
 
+                double beta =1/temperature ;
+
+                double prob = exp(beta *dE*(-1)) ;
+            //    printf(" prob = %g\n",prob);
+
+                if( prob < gsl_rng_uniform(r))
+                {
+                //    printf(" t = %g\n",dE);
+                    ising_lattice[location]*= -1;
+
+                }
             }
+
         }
-    //    getchar();
 
-
-        //
-        // Print initial configuration to File
-        //
-
-    /*    FILE *initialConfig = fopen("initialConfig.txt","w");
-
-        for(int i = 0; i < x * y; i ++)
-        {
-            fprintf(initialConfig, "%d\t%d\t%d\n", x, y, ising_lattice[i]);
-        }*/
-
-        loop++;
+        loop ++;
     }
 
     close();
