@@ -1,11 +1,11 @@
 IDIR =../include
 CC=gcc
-CFLAGS=-Wall -g -fopenmp -I$(IDIR)
+CFLAGS=-Wall -g -fopenmp -I$(IDIR) -IC:/GSL/include
 
 ODIR=obj
 LDIR =../lib
 
-LIBS=-lm -lgsl -lgslcblas
+LIBS=-lm -lgsl -lgslcblas -L$(LDIR) -LC:/GSL/lib
 
 _DEPS =
 DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))

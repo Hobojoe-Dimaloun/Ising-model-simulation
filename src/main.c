@@ -29,8 +29,8 @@ int main(int argc,char **argv)
 {
     int numOfNodes;
     int debug = 0;  // Debug
-    int x = 4; // x - dimension lattice sites
-    int y = 4; // y - dimension lattice sites
+    int x = 200; // x - dimension lattice sites
+    int y = 200; // y - dimension lattice sites
     int z = 1; // z - dimension latties sites
     double temperature = 0.0001; // Kelvin
     int J = 1;
