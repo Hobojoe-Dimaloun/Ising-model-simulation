@@ -104,7 +104,7 @@ int main(int argc,char **argv)
     }
 
 	//While application is running
-	while( !quit && (loop/1000 <= 100) )
+	while( !quit && (loop/1000 <= 1000) )
 	{
 
         printf("loop %ld\n",loop);
