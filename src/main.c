@@ -20,6 +20,7 @@
 //Screen dimension constants
 
 static void randLattice(int *lattice, int x, int y, int z);
+static int energy_calculation(int *lattice, int location, int x, int y, int J);
 
 
 const double gBoltzmann = 1.38064852E-23;
@@ -33,7 +34,7 @@ int main(int argc,char **argv)
     int y = 200; // y - dimension lattice sites
     int z = 1; // z - dimension latties sites
     double temperature = 0.0001; // Kelvin
-    int J = 1;
+    int J = 1; // anti/ferromagnetic
     //
     // Handle input arguments
     //
@@ -45,7 +46,7 @@ int main(int argc,char **argv)
             case 0: numOfThreads = omp_get_max_threads(); break;
             case 1: numOfThreads =  atoi(argv[i]); break;
             case 2: numOfNodes = *argv[i]; break;
-            case 3: debug = 1; break;
+            case 3: debug = atoi(argv[i]); break;
             default: break;
         }
     }
@@ -89,7 +90,6 @@ int main(int argc,char **argv)
     //
     //
     //
-    bool quit = false;
 
     double time = omp_get_wtime();
 
@@ -104,7 +104,7 @@ int main(int argc,char **argv)
     }
 
 	//While application is running
-	while( !quit && (loop/1000 <= 1000) )
+	while((loop/1000 <= 1000) )
 	{
 
         printf("loop %ld\n",loop);
@@ -132,16 +132,18 @@ int main(int argc,char **argv)
             #pragma omp barrier
 
             int location = (double)gsl_rng_uniform(r)* x * y * (omp_get_thread_num()+1) / (double)numOfThreads;
-            int icolumn = location%y; // the remainder is the column number
-            int irow = (location - icolumn)/x  ;// number of rows
-            int temp;
-
+        //    int icolumn = location%y; // the remainder is the column number
+        //    int irow = (location - icolumn)/x  ;// number of rows
+        //    int temp;
 
             double dE = 0, E1=0, E2=0;
+
+            E1 = energy_calculation(ising_lattice, location, x,  y, J);
+
             //
             // Calculate energy of cell above
             //
-            (irow == 0) ? (temp = x-1) : (temp = irow-1);
+        /*    (irow == 0) ? (temp = x-1) : (temp = irow-1);
 
             E1+= J*ising_lattice[location] * ising_lattice[temp*x + icolumn]*(-1);
 
@@ -163,15 +165,15 @@ int main(int argc,char **argv)
             // Calculate energy of cell right
             //
             (icolumn == (y-1)) ? (temp = 0) : (temp = icolumn+1);
-            E1+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);
+            E1+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);*/
 
             //
             // Flip the spin
             //
 
             ising_lattice[location] *=-1 ;
-
-            (irow == 0) ? (temp = x-1) : (temp = irow-1);
+            E2= energy_calculation(ising_lattice, location, x,  y, J);
+        /*    (irow == 0) ? (temp = x-1) : (temp = irow-1);
 
             E2+= J*ising_lattice[location] * ising_lattice[temp*x + icolumn]*(-1);
 
@@ -193,7 +195,7 @@ int main(int argc,char **argv)
             // Calculate energy of cell right
             //
             (icolumn == (y-1)) ? (temp = 0) : (temp = icolumn+1);
-            E2+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);
+            E2+= J*ising_lattice[location] * ising_lattice[irow*x + temp]*(-1);*/
 
             dE= E2 - E1;
 
@@ -236,4 +238,38 @@ static void randLattice(int *lattice, int x, int y, int z)
             lattice[i] = -1;
         }
     }
+}
+
+static int energy_calculation(int *lattice, int location, int x, int y, int J)
+{
+
+    int icolumn = location%y; // the remainder is the column number
+    int irow = (location - icolumn)/x  ;// number of rows
+    int temp;
+    int energy = 0;
+    (irow == 0) ? (temp = x-1) : (temp = irow-1);
+
+    energy+= J*lattice[location] * lattice[temp*x + icolumn]*(-1);
+
+    //
+    // Calculate energy of cell below
+    //
+    (irow == (x-1)) ? (temp = 0) : (temp = irow+1);
+
+    energy+= J*lattice[location] * lattice[temp*x + icolumn]*(-1);
+
+    //
+    // Calculate energy of cell left
+    //
+
+    (icolumn == 0) ? (temp = y-1) : (temp = icolumn-1);
+    energy+= J*lattice[location] * lattice[irow*x + temp]*(-1);
+
+    //
+    // Calculate energy of cell right
+    //
+    (icolumn == (y-1)) ? (temp = 0) : (temp = icolumn+1);
+    energy+= J*lattice[location] * lattice[irow*x + temp]*(-1);
+
+    return energy;
 }
