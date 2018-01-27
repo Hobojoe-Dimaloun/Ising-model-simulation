@@ -7,10 +7,10 @@ LDIR =../lib
 
 LIBS=-lm -lgsl -lgslcblas -lmsmpi -L$(LDIR) -LC:/GSL/lib
 
-_DEPS =
+_DEPS = ising_functions.h
 DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))
 
-_OBJ = main.o
+_OBJ = ising_functions.o main.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 
