@@ -102,34 +102,12 @@ int main(int argc,char **argv)
 
         if(output == NULL)
         {
-            /*int fail = 1;
-            for(int task = 1; task<numOfNodes; task++)
-            {
-                MPI_Send(&fail,1,MPI_INT,task,messageTag[0],MPI_COMM_WORLD);
-            }*/
             MPI_Abort(MPI_COMM_WORLD,MPI_error);
             exit(EXIT_FAILURE);
         }
-    /*    else
-        {
-            int fail = 0;
-            for(int task = 1; task<numOfNodes; task++)
-            {
-                MPI_Send(&fail,1,MPI_INT,task,messageTag[0],MPI_COMM_WORLD);
-            }
-        }*/
-    }
-/*    else
-    {
-        int fail = 0;
-        MPI_Recv(&fail,1,MPI_INT,messageSource,messageTag[0],MPI_COMM_WORLD,&status);
 
-        if(fail != 0)
-        {
-            MPI_Abort();
-            exit(EXIT_FAILURE);
-        }
-    }*/
+    }
+
 
     /*****************INITIALISE FILE END****************************/
 
