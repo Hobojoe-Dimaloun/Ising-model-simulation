@@ -25,13 +25,15 @@
 
 const double gBoltzmann = 1.38064852E-23;
 const double gPi = 3.14159;
+int gNumOfNodes ;
+int gNumOfthreads ;
 
 int main(int argc,char **argv)
 {
-    int numOfNodes=1;
+    int numOfSpinFlips = 20000;
     int debug = 0;  // Debug
-    int x = 200; // x - dimension lattice sites
-    int y = 200; // y - dimension lattice sites
+    int x = 256; // x - dimension lattice sites
+    int y = 256; // y - dimension lattice sites
     int z = 1; // z - dimension latties sites
     double temperature = 0.0001; // Kelvin
     double beta = 1/temperature;
@@ -40,7 +42,6 @@ int main(int argc,char **argv)
     //
     // Handle input arguments
     //
-    int numOfThreads;
     for(int i = 0; i < argc; i++)
     {
         switch (i)
@@ -48,7 +49,7 @@ int main(int argc,char **argv)
         /*    case 0: numOfThreads = omp_get_max_threads(); break;
             case 1: numOfThreads =  atoi(argv[i]); break;
             case 2: debug = atoi(argv[i]); break;*/
-            default:  numOfThreads = 1;//omp_get_max_threads();
+            default:  gNumOfthreads = 3;//omp_get_max_threads();
             break;
         }
     }
@@ -69,8 +70,12 @@ int main(int argc,char **argv)
     // Set number of threads each node will use
     //
     MPI_Init(NULL, NULL);
-    MPI_Comm_size(MPI_COMM_WORLD, &numOfNodes);
-    if( (x) % (numOfThreads * numOfNodes) != 0 )
+    MPI_Comm_size(MPI_COMM_WORLD, &gNumOfNodes);
+
+    //
+    // Find out if the grid is 2^n
+    //
+    if((x*y*z)%gNumOfNodes != 0 || (((x*y*z)%gNumOfNodes))%gNumOfthreads!=0)
     {
         printf("Exit: Grid size not evenly divisable by number of threads times nodes\n");
         MPI_Abort(MPI_COMM_WORLD, MPI_error);
@@ -81,20 +86,25 @@ int main(int argc,char **argv)
 
     MPI_Comm_rank(MPI_COMM_WORLD, &taskid);
 
-    int chunksize = x  / numOfNodes ;
+    //
+    // Determine number of cells per core
+    //
 
-    omp_set_num_threads(numOfThreads);
+    int chunksize = x*y*z  / gNumOfNodes ;
+
+    omp_set_num_threads(gNumOfthreads);
     /*****************INITIALISE END****************************/
 
 
     printf("Ising model begin rank %d.\n", taskid);
     fflush(stdout);
 
-    int messageTag[3]=
+    int messageTag[4]=
     {
         0,  // File status message
         1,  // Full lattice transfer message
-        2   // Partial lattice transfer message
+        2,   // Partial lattice transfer message
+        3   // Boundary lattice transfer message
     };
 
     /*************************MASTER TASK*********************************/
@@ -133,9 +143,19 @@ int main(int argc,char **argv)
             exit(EXIT_FAILURE);
         }
 
-        int *ising_lattice_segment = NULL;
+        int *ising_lattice_node_segment = NULL;
 
-        if(( ising_lattice_segment = calloc(chunksize*y, sizeof(*ising_lattice_segment) )) == NULL)
+        if(( ising_lattice_node_segment = calloc(chunksize, sizeof(*ising_lattice_node_segment) )) == NULL)
+        {
+            printf("-Error %d : %s\nFile : %s\nLine : %d\n", errno, strerror(errno), __FILE__, __LINE__);
+            fflush(stdout);
+            MPI_Abort(MPI_COMM_WORLD,MPI_error);
+            exit(EXIT_FAILURE);
+        }
+
+        int *ising_lattice_node_boundaries= NULL;
+
+        if(( ising_lattice_node_boundaries = calloc(x*2, sizeof(*ising_lattice_node_boundaries) )) == NULL)
         {
             printf("-Error %d : %s\nFile : %s\nLine : %d\n", errno, strerror(errno), __FILE__, __LINE__);
             fflush(stdout);
@@ -144,98 +164,137 @@ int main(int argc,char **argv)
         }
 
         //
+        // Assign random spins to the lattice, ie 1 or -1
+        //
+        randLattice(ising_lattice,x,y,z);
+
+        //
         //  Allocate random number generators
         //
-
-        gsl_rng *rndarray[numOfThreads];
+        gsl_rng *rndarray[gNumOfthreads];
 
         #pragma omp parallel for
-        for(int i = 0; i<numOfThreads; i++)
+        for(int i = 0; i<gNumOfthreads; i++)
         {
             rndarray[i] = gsl_rng_alloc(gsl_rng_taus);
             gsl_rng_set(rndarray[i], i);
         }
 
-        //
-        // Assign random spins to the lattice, ie 1 or -1
-        //
-        randLattice(ising_lattice,x,y,z);
-        //
-        // Communicatel lattice segments to other ranks
-        //
-        for(int task = 1; task<numOfNodes; task++)
+
+
+        for(int task = 1; task<gNumOfNodes; task++)
         {
-            MPI_Send(&ising_lattice[task*chunksize*y],chunksize*y,MPI_INT,task,messageTag[1],MPI_COMM_WORLD);
-            printf("Sent %d elements to rank %d\n",chunksize*y,task);
+            MPI_Send(&ising_lattice[task*chunksize*y],chunksize,MPI_INT,task,messageTag[1],MPI_COMM_WORLD);
+            printf("Sent %d elements to rank %d\n",chunksize,task);
             fflush(stdout);
 
         }
+
+        memcpy(ising_lattice_node_segment,ising_lattice,chunksize);
         /*****************MEMORY MANAGEMENT END****************************/
 
-        /*****************ISING LOOP****************************/
+        int coreSpinFlip =numOfSpinFlips/(gNumOfNodes*gNumOfthreads);
 
-        long int loop = 0;
-        double time = omp_get_wtime();
-
-    	// While application is running
-        int loopmax=1000/(numOfNodes*numOfThreads);
-    	while((loop/10000 <= loopmax) )
-    	{
-            if(loop == 0 && taskid == MASTER)
-            {
-                printf("Approximate Kbytes : %lf  Mbytes : %lf  Gbytes : %lf\n",(double)x*y*loopmax*8/(double)1024, (double)x*y*loopmax*8/(double)(1024*1024), (double)x*y*loopmax*8/(double)(1024*1024*1024));
+        for(int loop = 0; loop < coreSpinFlip; loop ++)
+        {
+                printf("loop %d\n",loop);
                 fflush(stdout);
+            //
+            // update boundaries
+            //
+            if(taskid%2)
+            {
+                //
+                // Send own top boundary
+                //
+                int send ;
+                (taskid == 0) ? (send = gNumOfNodes -1) : (send = taskid-1);
+
+                MPI_Send(&ising_lattice_node_segment[0],x,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
+                //
+                // Send own bottom boundary
+                //
+                (taskid == gNumOfNodes-1) ? (send = 0) : (send = taskid+1);
+
+                MPI_Send(&ising_lattice_node_segment[chunksize - x],x,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
+
+                //
+                // Recieve neighbours bottom boundary (our top)
+                //
+                (taskid == 0) ? (send = gNumOfNodes -1) : (send = taskid-1);
+                MPI_Recv(&ising_lattice_node_boundaries[0],x,MPI_INT,send,messageTag[3],MPI_COMM_WORLD,&status);
+
+                //
+                // Recieve neighbours top boundary (our bottom)
+                //
+                (taskid == gNumOfNodes-1) ? (send = 0) : (send = taskid+1);
+                MPI_Recv(&ising_lattice_node_boundaries[x],x,MPI_INT,send,messageTag[3],MPI_COMM_WORLD,&status);
             }
-            if(loop%10000 == 0)
+            else
             {
-                printf("rank %d loop %ld\n",taskid,loop/10000);
-                fflush(stdout);
+
+                int send ;
+
+                //
+                // Recieve neighbours top boundary (our bottom)
+                //
+                (taskid == gNumOfNodes-1) ? (send = 0) : (send = taskid+1);
+                MPI_Recv(&ising_lattice_node_boundaries[x],x,MPI_INT,send,messageTag[3],MPI_COMM_WORLD,&status);
+
+                //
+                // Recieve neighbours bottom boundary (our top)
+                //
+                (taskid == 0) ? (send = gNumOfNodes -1) : (send = taskid-1);
+                MPI_Recv(&ising_lattice_node_boundaries[0],x,MPI_INT,send,messageTag[3],MPI_COMM_WORLD,&status);
+
+                //
+                // Send own bottom boundary
+                //
+                (taskid == gNumOfNodes-1) ? (send = 0) : (send = taskid+1);
+
+                MPI_Send(&ising_lattice_node_segment[chunksize - x],x,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
+
+                //
+                // Send own top boundary
+                //
+                (taskid == 0) ? (send = gNumOfNodes -1) : (send = taskid-1);
+
+                MPI_Send(&ising_lattice_node_segment[0],x,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
+
             }
             #pragma omp parallel
             {
-                gsl_rng *r = rndarray[omp_get_thread_num()];
-                #pragma omp single
+                int *ising_lattice_core_boundaries = NULL;
+                if(( ising_lattice_core_boundaries = calloc((y/gNumOfNodes) * 2, sizeof(*ising_lattice_core_boundaries) )) == NULL)
                 {
-        		//Handle events on queue
-
-                    if(loop%10000 == 0 && taskid == MASTER)
-                    {
-                        int sum = 0;
-                        for(int i = 0; i < x*y; i++)
-                        {
-                            fprintf(output,"%d ",ising_lattice[i]);
-                            sum += ising_lattice[i];
-                        }
-                        fprintf(output,"\n");
-
-                        fprintf(output,"%d\n",sum);
-                        fflush(output);
-                    }
+                    printf("-Error %d : %s\nFile : %s\nLine : %d\n", errno, strerror(errno), __FILE__, __LINE__);
+                    fflush(stdout);
+                    MPI_Abort(MPI_COMM_WORLD,MPI_error);
+                    exit(EXIT_FAILURE);
                 }
-                #pragma omp barrier
-                energy_comparison(x, y, r, ising_lattice, beta, J,numOfThreads, numOfNodes, chunksize);
+
+                for(int i = 0; i < y/gNumOfNodes; i++)
+                {
+                    int left, right;
+                    (omp_get_thread_num() == 0) ? (left = gNumOfthreads -1 ) : (left = omp_get_thread_num()-1);
+                    ising_lattice_core_boundaries[i] = ising_lattice_node_segment[i * x + x/gNumOfthreads*(left+1)-1 ];
+                    (omp_get_thread_num() == gNumOfthreads-1) ? (right = 0) : (right = omp_get_thread_num()+1);
+                    ising_lattice_core_boundaries[i+y/gNumOfNodes] =ising_lattice_node_segment[i * x + x/gNumOfthreads*right];
+                }
+
+                //
+                // Calculate spin flip
+                //
+
+
+
 
 
 
             }
-            for(int i=1; i<numOfNodes; i++)
-            {
-                MPI_Recv(&ising_lattice[i*chunksize*y],chunksize*y,MPI_INT,i,messageTag[2],MPI_COMM_WORLD,&status);
-            }
 
-            for(int i=1; i<numOfNodes; i++)
-            {
-                MPI_Send(&ising_lattice[i*chunksize*y],chunksize*y,MPI_INT,i,messageTag[1],MPI_COMM_WORLD);
-            }
-
-
-            loop ++;
         }
 
-        /*****************ISING LOOP END****************************/
-
-        time = omp_get_wtime() - time;
-        printf("Time = %lf\n",time);
 
     }
 
@@ -251,9 +310,9 @@ int main(int argc,char **argv)
     {
         /*****************MEMORY MANAGEMENT****************************/
 
-        int *ising_lattice_segment = NULL;
+        int *ising_lattice_node_segment = NULL;
 
-        if(( ising_lattice_segment = calloc(chunksize*y, sizeof(*ising_lattice_segment) )) == NULL)
+        if(( ising_lattice_node_segment = calloc(chunksize, sizeof(*ising_lattice_node_segment) )) == NULL)
         {
             printf("-Error %d : %s\nFile : %s\nLine : %d\n", errno, strerror(errno), __FILE__, __LINE__);
             fflush(stdout);
@@ -261,67 +320,126 @@ int main(int argc,char **argv)
             exit(EXIT_FAILURE);
         }
 
-        gsl_rng *rndarray[numOfThreads];
+        int *ising_lattice_node_boundaries= NULL;
+
+        if(( ising_lattice_node_boundaries = calloc(x*2, sizeof(*ising_lattice_node_boundaries) )) == NULL)
+        {
+            printf("-Error %d : %s\nFile : %s\nLine : %d\n", errno, strerror(errno), __FILE__, __LINE__);
+            fflush(stdout);
+            MPI_Abort(MPI_COMM_WORLD,MPI_error);
+            exit(EXIT_FAILURE);
+        }
+
+        gsl_rng *rndarray[gNumOfthreads];
 
         #pragma omp parallel for
-        for(int i = 0; i<numOfThreads; i++)
+        for(int i = 0; i<gNumOfthreads; i++)
         {
             rndarray[i] = gsl_rng_alloc(gsl_rng_taus);
             gsl_rng_set(rndarray[i], i * taskid);
         }
 
-        MPI_Recv(&ising_lattice_segment[0],chunksize*y,MPI_INT,MASTER,messageTag[1],MPI_COMM_WORLD,&status);
-        printf("Rank %d recieved %d elements from task %d\n",taskid,chunksize*y,MASTER);
+        MPI_Recv(&ising_lattice_node_segment[0],chunksize,MPI_INT,MASTER,messageTag[1],MPI_COMM_WORLD,&status);
+        printf("Rank %d recieved %d elements from task %d\n",taskid,chunksize,MASTER);
         fflush(stdout);
 
         /*****************MEMORY MANAGEMENT END****************************/
 
-        /*****************ISING LOOP****************************/
+        int coreSpinFlip =numOfSpinFlips/(gNumOfNodes*gNumOfthreads);
 
-        double time = omp_get_wtime();
-        long int loop = 0;
-    	//While application is running
-        int loopmax=10000/(numOfNodes*numOfThreads);
-        while((loop/10000 <= loopmax) )
-    	{
-
-            if(loop%10000 == 0)
-            {
-                printf("rank %d loop %ld\n",taskid,loop/10000);
+        for(int loop = 0; loop < coreSpinFlip; loop ++)
+        {
+                printf("loop %d\n",loop);
                 fflush(stdout);
+            //
+            // update boundaries
+            //
+            if(taskid%2)
+            {
+                //
+                // Send own top boundary
+                //
+                int send ;
+                (taskid == 0) ? (send = gNumOfNodes -1) : (send = taskid-1);
+
+                MPI_Send(&ising_lattice_node_segment[0],x,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
+                //
+                // Send own bottom boundary
+                //
+                (taskid == gNumOfNodes-1) ? (send = 0) : (send = taskid+1);
+
+                MPI_Send(&ising_lattice_node_segment[chunksize - x],x,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
+
+                //
+                // Recieve neighbours bottom boundary (our top)
+                //
+                (taskid == 0) ? (send = gNumOfNodes -1) : (send = taskid-1);
+                MPI_Recv(&ising_lattice_node_boundaries[0],x,MPI_INT,send,messageTag[3],MPI_COMM_WORLD,&status);
+
+                //
+                // Recieve neighbours top boundary (our bottom)
+                //
+                (taskid == gNumOfNodes-1) ? (send = 0) : (send = taskid+1);
+                MPI_Recv(&ising_lattice_node_boundaries[x],x,MPI_INT,send,messageTag[3],MPI_COMM_WORLD,&status);
+            }
+            else
+            {
+
+                int send ;
+
+                //
+                // Recieve neighbours top boundary (our bottom)
+                //
+                (taskid == gNumOfNodes-1) ? (send = 0) : (send = taskid+1);
+                MPI_Recv(&ising_lattice_node_boundaries[x],x,MPI_INT,send,messageTag[3],MPI_COMM_WORLD,&status);
+
+                //
+                // Recieve neighbours bottom boundary (our top)
+                //
+                (taskid == 0) ? (send = gNumOfNodes -1) : (send = taskid-1);
+                MPI_Recv(&ising_lattice_node_boundaries[0],x,MPI_INT,send,messageTag[3],MPI_COMM_WORLD,&status);
+
+                //
+                // Send own bottom boundary
+                //
+                (taskid == gNumOfNodes-1) ? (send = 0) : (send = taskid+1);
+
+                MPI_Send(&ising_lattice_node_segment[chunksize - x],x,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
+
+                //
+                // Send own top boundary
+                //
+                (taskid == 0) ? (send = gNumOfNodes -1) : (send = taskid-1);
+
+                MPI_Send(&ising_lattice_node_segment[0],x,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
+
             }
             #pragma omp parallel
             {
-                gsl_rng *r = rndarray[omp_get_thread_num()];
-
-                /*#pragma omp single
+                int *ising_lattice_core_boundaries = NULL;
+                if(( ising_lattice_core_boundaries = calloc((y/gNumOfNodes) * 2, sizeof(*ising_lattice_core_boundaries) )) == NULL)
                 {
+                    printf("-Error %d : %s\nFile : %s\nLine : %d\n", errno, strerror(errno), __FILE__, __LINE__);
+                    fflush(stdout);
+                    MPI_Abort(MPI_COMM_WORLD,MPI_error);
+                    exit(EXIT_FAILURE);
+                }
 
-                    if(loop%10000 == 0 && taskid == MASTER)
-                    {
-                        for(int i = 0; i < x*y; i++)
-                        {
+                for(int i = 0; i < y/gNumOfNodes; i++)
+                {
+                    int left, right;
+                    (omp_get_thread_num() == 0) ? (left = gNumOfthreads -1 ) : (left = omp_get_thread_num()-1);
+                    ising_lattice_core_boundaries[i] = ising_lattice_node_segment[i * x + x/gNumOfthreads*(left+1)-1 ];
+                    (omp_get_thread_num() == gNumOfthreads-1) ? (right = 0) : (right = omp_get_thread_num()+1);
+                    ising_lattice_core_boundaries[i+y/gNumOfNodes] =ising_lattice_node_segment[i * x + x/gNumOfthreads*right];
+                }
 
-                        }
-
-                    }
-                }*/
-                #pragma omp barrier
-                energy_comparison(x, y, r, ising_lattice_segment, beta, J,numOfThreads, numOfNodes, chunksize);
-
-
+                //
+                // Calculate spin flip
+                //
             }
 
-            MPI_Send(&ising_lattice_segment[0],chunksize*y,MPI_INT, MASTER ,messageTag[2],MPI_COMM_WORLD);
-            MPI_Recv(&ising_lattice_segment[0],chunksize*y,MPI_INT,MASTER,messageTag[1],MPI_COMM_WORLD,&status);
-
-            loop ++;
         }
-        /*****************ISING LOOP END****************************/
-
-        time = omp_get_wtime() - time;
-       printf("Time = %lf\n",time);
-
     }
     /*************************OTHER TASK END*************************************/
 
