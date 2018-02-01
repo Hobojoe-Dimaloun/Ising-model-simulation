@@ -3,7 +3,7 @@
 #include <math.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_errno.h>
-
+#include <omp.h>
 
 #include "ising_functions.h"
 
@@ -25,6 +25,34 @@ void randLattice(int *lattice, int x, int y, int z)
         }
     }
 }
+
+//
+// Perform energy comparison
+//
+
+void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int beta, int J,int numOfThreads, int numOfNodes,int chunksize)
+{
+    int location = (double)gsl_rng_uniform(r)*chunksize*y* (omp_get_thread_num()+1) / (double)numOfThreads;
+
+    int E1=0, E2=0;
+    //
+    // Calculate spin energy
+    //
+    E1 = energy_calculation(ising_lattice, location, x/numOfNodes,  y, J);
+    //
+    // Flip spin
+    //
+    ising_lattice[location] *=-1 ;
+    //
+    // Calcualte new spin-flipped energy
+    //
+    E2= energy_calculation(ising_lattice, location, x/numOfNodes,  y, J);
+    //
+    // Keep spin flip with probability determined in spin_flip_check()
+    //
+    ising_lattice[location]*=spin_flip_check(E1, E2, beta, r);
+}
+
 
 //
 // Calculates the energy due to the surrounding cells

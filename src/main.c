@@ -48,7 +48,8 @@ int main(int argc,char **argv)
         /*    case 0: numOfThreads = omp_get_max_threads(); break;
             case 1: numOfThreads =  atoi(argv[i]); break;
             case 2: debug = atoi(argv[i]); break;*/
-            default:  numOfThreads = omp_get_max_threads(); break;
+            default:  numOfThreads = 1;//omp_get_max_threads();
+            break;
         }
     }
 
@@ -69,7 +70,7 @@ int main(int argc,char **argv)
     //
     MPI_Init(NULL, NULL);
     MPI_Comm_size(MPI_COMM_WORLD, &numOfNodes);
-    if( (x * y * z) % (numOfThreads * numOfNodes) != 0 )
+    if( (x) % (numOfThreads * numOfNodes) != 0 )
     {
         printf("Exit: Grid size not evenly divisable by number of threads times nodes\n");
         MPI_Abort(MPI_COMM_WORLD, MPI_error);
@@ -80,7 +81,7 @@ int main(int argc,char **argv)
 
     MPI_Comm_rank(MPI_COMM_WORLD, &taskid);
 
-    int chunksize = x * y * z / ( numOfNodes * numOfThreads );
+    int chunksize = x  / numOfNodes ;
 
     omp_set_num_threads(numOfThreads);
     /*****************INITIALISE END****************************/
@@ -89,12 +90,20 @@ int main(int argc,char **argv)
     printf("Ising model begin rank %d.\n", taskid);
     fflush(stdout);
 
+    int messageTag[3]=
+    {
+        0,  // File status message
+        1,  // Full lattice transfer message
+        2   // Partial lattice transfer message
+    };
 
-
-    /*****************INITIALISE FILE****************************/
-    FILE *output = NULL ;
+    /*************************MASTER TASK*********************************/
     if(taskid == MASTER)
     {
+        /*****************INITIALISE FILE****************************/
+        FILE *output = NULL ;
+
+
         output=fopen("output.txt","w");
 
         fprintf(output,"%d\n",x);
@@ -106,145 +115,215 @@ int main(int argc,char **argv)
             exit(EXIT_FAILURE);
         }
 
-    }
+        /*****************INITIALISE FILE END****************************/
 
 
-    /*****************INITIALISE FILE END****************************/
+        /*****************MEMORY MANAGEMENT****************************/
 
+        //
+        // Allocate lattice memory
+        //
+        int *ising_lattice = NULL;
 
+        if(( ising_lattice = calloc(x * y * z, sizeof(*ising_lattice) )) == NULL)
+        {
+            printf("-Error %d : %s\nFile : %s\nLine : %d\n", errno, strerror(errno), __FILE__, __LINE__);
+            fflush(stdout);
+            MPI_Abort(MPI_COMM_WORLD,MPI_error);
+            exit(EXIT_FAILURE);
+        }
 
+        int *ising_lattice_segment = NULL;
 
-    /*****************MEMORY MANAGEMENT****************************/
+        if(( ising_lattice_segment = calloc(chunksize*y, sizeof(*ising_lattice_segment) )) == NULL)
+        {
+            printf("-Error %d : %s\nFile : %s\nLine : %d\n", errno, strerror(errno), __FILE__, __LINE__);
+            fflush(stdout);
+            MPI_Abort(MPI_COMM_WORLD,MPI_error);
+            exit(EXIT_FAILURE);
+        }
 
-    //
-    // Allocate lattice memory
-    //
-    int *ising_lattice = NULL;
+        //
+        //  Allocate random number generators
+        //
 
-    if(( ising_lattice = calloc(x * y * z, sizeof(*ising_lattice) )) == NULL)
-    {
-        printf("-Error %d : %s\nFile : %s\nLine : %d\n", errno, strerror(errno), __FILE__, __LINE__);
-        fflush(stdout);
-        MPI_Abort(MPI_COMM_WORLD,MPI_error);
-        exit(EXIT_FAILURE);
-    }
+        gsl_rng *rndarray[numOfThreads];
 
-    //
-    //  Allocate random number generators
-    //
+        #pragma omp parallel for
+        for(int i = 0; i<numOfThreads; i++)
+        {
+            rndarray[i] = gsl_rng_alloc(gsl_rng_taus);
+            gsl_rng_set(rndarray[i], i);
+        }
 
-    gsl_rng *rndarray[numOfThreads];
-
-    #pragma omp parallel for
-    for(int i = 0; i<numOfThreads; i++)
-    {
-        rndarray[i] = gsl_rng_alloc(gsl_rng_taus);
-        gsl_rng_set(rndarray[i], i * taskid);
-    }
-
-
-    int messageTag[2]=
-    {
-        0,  // File status message
-        1   // Lattice transfer message
-    };
-    int messageSource = 0;
-
-
-    if(taskid == MASTER)
-    {
         //
         // Assign random spins to the lattice, ie 1 or -1
         //
         randLattice(ising_lattice,x,y,z);
+        //
+        // Communicatel lattice segments to other ranks
+        //
         for(int task = 1; task<numOfNodes; task++)
         {
-            MPI_Send(&ising_lattice[0],x*y*z,MPI_INT,task,messageTag[1],MPI_COMM_WORLD);
-            printf("Sent %d elements to rank %d\n",x*y*z,task);
+            MPI_Send(&ising_lattice[task*chunksize*y],chunksize*y,MPI_INT,task,messageTag[1],MPI_COMM_WORLD);
+            printf("Sent %d elements to rank %d\n",chunksize*y,task);
             fflush(stdout);
 
         }
+        /*****************MEMORY MANAGEMENT END****************************/
+
+        /*****************ISING LOOP****************************/
+
+        long int loop = 0;
+        double time = omp_get_wtime();
+
+    	// While application is running
+        int loopmax=1000/(numOfNodes*numOfThreads);
+    	while((loop/10000 <= loopmax) )
+    	{
+            if(loop == 0 && taskid == MASTER)
+            {
+                printf("Approximate Kbytes : %lf  Mbytes : %lf  Gbytes : %lf\n",(double)x*y*loopmax*8/(double)1024, (double)x*y*loopmax*8/(double)(1024*1024), (double)x*y*loopmax*8/(double)(1024*1024*1024));
+                fflush(stdout);
+            }
+            if(loop%10000 == 0)
+            {
+                printf("rank %d loop %ld\n",taskid,loop/10000);
+                fflush(stdout);
+            }
+            #pragma omp parallel
+            {
+                gsl_rng *r = rndarray[omp_get_thread_num()];
+                #pragma omp single
+                {
+        		//Handle events on queue
+
+                    if(loop%10000 == 0 && taskid == MASTER)
+                    {
+                        int sum = 0;
+                        for(int i = 0; i < x*y; i++)
+                        {
+                            fprintf(output,"%d ",ising_lattice[i]);
+                            sum += ising_lattice[i];
+                        }
+                        fprintf(output,"\n");
+
+                        fprintf(output,"%d\n",sum);
+                        fflush(output);
+                    }
+                }
+                #pragma omp barrier
+                energy_comparison(x, y, r, ising_lattice, beta, J,numOfThreads, numOfNodes, chunksize);
+
+
+
+            }
+            for(int i=1; i<numOfNodes; i++)
+            {
+                MPI_Recv(&ising_lattice[i*chunksize*y],chunksize*y,MPI_INT,i,messageTag[2],MPI_COMM_WORLD,&status);
+            }
+
+            for(int i=1; i<numOfNodes; i++)
+            {
+                MPI_Send(&ising_lattice[i*chunksize*y],chunksize*y,MPI_INT,i,messageTag[1],MPI_COMM_WORLD);
+            }
+
+
+            loop ++;
+        }
+
+        /*****************ISING LOOP END****************************/
+
+        time = omp_get_wtime() - time;
+        printf("Time = %lf\n",time);
+
     }
+
+
+    /*************************MASTER TASK END*********************************/
+
+
+
+
+
+    /*************************OTHER TASK*************************************/
     else
     {
-        MPI_Recv(&ising_lattice[0],x*y*z,MPI_INT,messageSource,messageTag[1],MPI_COMM_WORLD,&status);
-        printf("Rank %d recieved %d elements from task %d\n",taskid,x*y*z,messageSource);
+        /*****************MEMORY MANAGEMENT****************************/
 
-    }
-    /*****************MEMORY MANAGEMENT END****************************/
+        int *ising_lattice_segment = NULL;
 
-    long int loop = 0;
-
-
-    //
-    //
-    //
-
-    double time = omp_get_wtime();
-
-	//While application is running
-    int loopmax=1000/(numOfNodes*numOfThreads);
-	while((loop/10000 <= loopmax) )
-	{
-        if(loop == 0 && taskid == MASTER)
+        if(( ising_lattice_segment = calloc(chunksize*y, sizeof(*ising_lattice_segment) )) == NULL)
         {
-            printf("Approximate Kbytes : %lf  Mbytes : %lf  Gbytes : %lf\n",(double)x*y*loopmax*8/(double)1024, (double)x*y*loopmax*8/(double)(1024*1024), (double)x*y*loopmax*8/(double)(1024*1024*1024));
+            printf("-Error %d : %s\nFile : %s\nLine : %d\n", errno, strerror(errno), __FILE__, __LINE__);
             fflush(stdout);
+            MPI_Abort(MPI_COMM_WORLD,MPI_error);
+            exit(EXIT_FAILURE);
         }
-        if(loop%10000 == 0)
+
+        gsl_rng *rndarray[numOfThreads];
+
+        #pragma omp parallel for
+        for(int i = 0; i<numOfThreads; i++)
         {
-            printf("rank %d loop %ld\n",taskid,loop/10000);
-            fflush(stdout);
+            rndarray[i] = gsl_rng_alloc(gsl_rng_taus);
+            gsl_rng_set(rndarray[i], i * taskid);
         }
-        #pragma omp parallel
-        {
-            gsl_rng *r = rndarray[omp_get_thread_num()];
-            #pragma omp single
+
+        MPI_Recv(&ising_lattice_segment[0],chunksize*y,MPI_INT,MASTER,messageTag[1],MPI_COMM_WORLD,&status);
+        printf("Rank %d recieved %d elements from task %d\n",taskid,chunksize*y,MASTER);
+        fflush(stdout);
+
+        /*****************MEMORY MANAGEMENT END****************************/
+
+        /*****************ISING LOOP****************************/
+
+        double time = omp_get_wtime();
+        long int loop = 0;
+    	//While application is running
+        int loopmax=10000/(numOfNodes*numOfThreads);
+        while((loop/10000 <= loopmax) )
+    	{
+
+            if(loop%10000 == 0)
             {
-    		//Handle events on queue
-
-                if(loop%10000 == 0 && taskid == MASTER)
-                {
-                    int sum = 0;
-                    for(int i = 0; i < x*y; i++)
-                    {
-                        fprintf(output,"%d ",ising_lattice[i]);
-                        sum += ising_lattice[i];
-                    }
-                    fprintf(output,"\n");
-
-                    fprintf(output,"%d\n",sum);
-                    fflush(output);
-                }
+                printf("rank %d loop %ld\n",taskid,loop/10000);
+                fflush(stdout);
             }
-            #pragma omp barrier
+            #pragma omp parallel
+            {
+                gsl_rng *r = rndarray[omp_get_thread_num()];
 
-            int location = (double)gsl_rng_uniform(r)* x * y * (omp_get_thread_num()+1) / (double)numOfThreads;
+                /*#pragma omp single
+                {
 
-            int E1=0, E2=0;
-            //
-            // Calculate spin energy
-            //
-            E1 = energy_calculation(ising_lattice, location, x,  y, J);
-            //
-            // Flip spin
-            //
-            ising_lattice[location] *=-1 ;
-            //
-            // Calcualte new spin-flipped energy
-            //
-            E2= energy_calculation(ising_lattice, location, x,  y, J);
-            //
-            // Keep spin flip with probability determined in spin_flip_check()
-            //
-            ising_lattice[location]*=spin_flip_check(E1, E2, beta, r);
+                    if(loop%10000 == 0 && taskid == MASTER)
+                    {
+                        for(int i = 0; i < x*y; i++)
+                        {
 
+                        }
+
+                    }
+                }*/
+                #pragma omp barrier
+                energy_comparison(x, y, r, ising_lattice_segment, beta, J,numOfThreads, numOfNodes, chunksize);
+
+
+            }
+
+            MPI_Send(&ising_lattice_segment[0],chunksize*y,MPI_INT, MASTER ,messageTag[2],MPI_COMM_WORLD);
+            MPI_Recv(&ising_lattice_segment[0],chunksize*y,MPI_INT,MASTER,messageTag[1],MPI_COMM_WORLD,&status);
+
+            loop ++;
         }
+        /*****************ISING LOOP END****************************/
 
-        loop ++;
+        time = omp_get_wtime() - time;
+       printf("Time = %lf\n",time);
+
     }
-    time = omp_get_wtime() - time;
-    printf("Time = %lf\n",time);
+    /*************************OTHER TASK END*************************************/
 
     MPI_Finalize();
     return 0;
