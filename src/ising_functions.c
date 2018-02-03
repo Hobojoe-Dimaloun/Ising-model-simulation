@@ -11,6 +11,9 @@
 // Randomises lattice
 //
 
+extern int gNumOfNodes;
+extern int gNumOfthreads;
+
 void randLattice(int *lattice, int x, int y, int z)
 {
     for(int i = 0; i < x * y * z; i ++)
@@ -30,15 +33,15 @@ void randLattice(int *lattice, int x, int y, int z)
 // Perform energy comparison
 //
 
-void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int beta, int J,int numOfThreads, int numOfNodes,int chunksize)
+void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int * ising_lattice_core_boundaries,int *ising_lattice_node_boundaries, int beta, int J,int chunksize)
 {
-    int location = (double)gsl_rng_uniform(r)*chunksize*y* (omp_get_thread_num()+1) / (double)numOfThreads;
+    int location = (double)gsl_rng_uniform(r) * (x /gNumOfthreads) * (y /gNumOfNodes);
 
     int E1=0, E2=0;
     //
     // Calculate spin energy
     //
-    E1 = energy_calculation(ising_lattice, location, x/numOfNodes,  y, J);
+    E1 = energy_calculation(ising_lattice,ising_lattice_core_boundaries,ising_lattice_node_boundaries, location, x/gNumOfNodes,  y, J);
     //
     // Flip spin
     //
@@ -46,7 +49,7 @@ void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int beta, i
     //
     // Calcualte new spin-flipped energy
     //
-    E2= energy_calculation(ising_lattice, location, x/numOfNodes,  y, J);
+    E2= energy_calculation(ising_lattice,ising_lattice_core_boundaries, ising_lattice_node_boundaries, location, x/gNumOfNodes,  y, J);
     //
     // Keep spin flip with probability determined in spin_flip_check()
     //
@@ -58,40 +61,42 @@ void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int beta, i
 // Calculates the energy due to the surrounding cells
 //
 
-int energy_calculation(int *lattice, int location, int x, int y, int J)
+int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, int location, int x, int y, int J)
 {
 
-    int icolumn = location%y; // the remainder is the column number
-    int irow = (location - icolumn)/x  ;// number of rows
+    int icolumn = location%(y /gNumOfNodes); // the remainder is the column number
+    int irow = (location - icolumn)/(x /gNumOfthreads)  ;// number of rows
     int temp;
     int energy = 0;
+    int columnOffset = x/gNumOfthreads * omp_get_thread_num();
     //
     // Calculate energy of cell above
     //
-    (irow == 0) ? (temp = x-1) : (temp = irow-1);
-
-    energy+= J*lattice[location] * lattice[temp*x + icolumn]*(-1);
+/*    (irow == 0) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * nodeBoundaries[columnOffset + icolumn ]*(-1))
+                : (energy += J*lattice[irow * x + icolumn + columnOffset ] * lattice[(irow-1)*x + icolumn + columnOffset]*(-1));
 
     //
     // Calculate energy of cell below
     //
-    (irow == (x-1)) ? (temp = 0) : (temp = irow+1);
+    (irow == (x-1)) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * nodeBoundaries[columnOffset + icolumn + x]*(-1))
+                    : (energy += J*lattice[irow * x + icolumn + columnOffset ] * lattice[(irow+1)*x + icolumn + columnOffset]*(-1));
 
-    energy+= J*lattice[location] * lattice[temp*x + icolumn]*(-1);
 
     //
     // Calculate energy of cell left
     //
 
-    (icolumn == 0) ? (temp = y-1) : (temp = icolumn-1);
-    energy+= J*lattice[location] * lattice[irow*x + temp]*(-1);
+    (icolumn == 0) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * coreBoundaries[icolumn]*(-1))
+                    : (energy += J*lattice[irow * x + icolumn + columnOffset ] * lattice[irow*x + icolumn + columnOffset -1]*(-1));
 
     //
     // Calculate energy of cell right
     //
-    (icolumn == (y-1)) ? (temp = 0) : (temp = icolumn+1);
-    energy+= J*lattice[location] * lattice[irow*x + temp]*(-1);
 
+    (icolumn == (y-1)) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * coreBoundaries[icolumn + y/gNumOfNodes]*(-1))
+                    : (energy += J*lattice[irow * x + icolumn + columnOffset ] * lattice[irow*x + icolumn + columnOffset +1]*(-1));
+
+*/
     return energy;
 }
 
@@ -106,7 +111,7 @@ int spin_flip_check(int E1, int E2, double beta, gsl_rng *r)
 
         if( prob < gsl_rng_uniform(r))
         {
-            return -1;
+            return 1;
         }
         else
         {

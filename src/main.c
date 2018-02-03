@@ -30,7 +30,7 @@ int gNumOfthreads ;
 
 int main(int argc,char **argv)
 {
-    int numOfSpinFlips = 20000;
+    int numOfSpinFlips = 1E6;
     int debug = 0;  // Debug
     int x = 256; // x - dimension lattice sites
     int y = 256; // y - dimension lattice sites
@@ -49,7 +49,7 @@ int main(int argc,char **argv)
         /*    case 0: numOfThreads = omp_get_max_threads(); break;
             case 1: numOfThreads =  atoi(argv[i]); break;
             case 2: debug = atoi(argv[i]); break;*/
-            default:  gNumOfthreads = 3;//omp_get_max_threads();
+            default:  gNumOfthreads = 4;//omp_get_max_threads();
             break;
         }
     }
@@ -116,14 +116,15 @@ int main(int argc,char **argv)
 
         output=fopen("output.txt","w");
 
-        fprintf(output,"%d\n",x);
-        fprintf(output,"%d\n",y);
-
         if(output == NULL)
         {
             MPI_Abort(MPI_COMM_WORLD,MPI_error);
             exit(EXIT_FAILURE);
         }
+
+        fprintf(output,"%d\n",x);
+        fprintf(output,"%d\n",y);
+        fflush(output);
 
         /*****************INITIALISE FILE END****************************/
 
@@ -184,14 +185,26 @@ int main(int argc,char **argv)
 
         for(int task = 1; task<gNumOfNodes; task++)
         {
-            MPI_Send(&ising_lattice[task*chunksize*y],chunksize,MPI_INT,task,messageTag[1],MPI_COMM_WORLD);
+            MPI_Send(&ising_lattice[task*chunksize],chunksize,MPI_INT,task,messageTag[1],MPI_COMM_WORLD);
             printf("Sent %d elements to rank %d\n",chunksize,task);
             fflush(stdout);
 
         }
+        for( int write = 0; write < chunksize; write++)
+        {
+            ising_lattice_node_segment[write] =ising_lattice[write];
 
-        memcpy(ising_lattice_node_segment,ising_lattice,chunksize);
+        }
+        //memcpy(ising_lattice_node_segment,ising_lattice,chunksize);
         /*****************MEMORY MANAGEMENT END****************************/
+
+        for( int write = 0; write < x*y*z; write++)
+        {
+            fprintf(output,"%d ",ising_lattice[write]);
+
+        }
+        fprintf(output,"\n");
+        fflush(output);
 
         int coreSpinFlip =numOfSpinFlips/(gNumOfNodes*gNumOfthreads);
 
@@ -285,16 +298,42 @@ int main(int argc,char **argv)
                 //
                 // Calculate spin flip
                 //
+                energy_comparison(x, y, rndarray[omp_get_thread_num()], ising_lattice_node_segment, ising_lattice_core_boundaries,ising_lattice_node_boundaries, beta,  J, chunksize);
 
-
-
-
-
-
+                free(ising_lattice_core_boundaries);
             }
 
+            if(loop%1000 == 0)
+            {
+                for(int task = 1; task<gNumOfNodes; task++)
+                {
+                    int check =1;
+                    MPI_Recv(&ising_lattice[task*chunksize],chunksize,MPI_INT,task,messageTag[2],MPI_COMM_WORLD,&status);
+                    MPI_Send(&check,1,MPI_INT,task,messageTag[0],MPI_COMM_WORLD);
+                //    printf("Reviced %d elements from rank %d\n",chunksize,task);
+                //    fflush(stdout);
+
+                }
+                for( int write = 0; write < chunksize; write++)
+                {
+                    ising_lattice[write] =ising_lattice_node_segment[write];
+
+                }
+                for( int write = 0; write < x*y*z; write++)
+                {
+                    fprintf(output,"%d ",ising_lattice[write]);
+
+                }
+                fprintf(output,"\n");
+                fflush(output);
+            }
         }
 
+        free(ising_lattice_node_boundaries);
+        free(ising_lattice_node_segment);
+        free(ising_lattice);
+
+        fclose(output);
 
     }
 
@@ -349,7 +388,7 @@ int main(int argc,char **argv)
 
         for(int loop = 0; loop < coreSpinFlip; loop ++)
         {
-                printf("loop %d\n",loop);
+                //printf("loop %d\n",loop);
                 fflush(stdout);
             //
             // update boundaries
@@ -437,9 +476,23 @@ int main(int argc,char **argv)
                 //
                 // Calculate spin flip
                 //
+
+                energy_comparison(x, y, rndarray[omp_get_thread_num()], ising_lattice_node_segment, ising_lattice_core_boundaries,ising_lattice_node_boundaries, beta,  J, chunksize);
+                free(ising_lattice_core_boundaries);
+
+            }
+            if(loop%1000 == 0)
+            {
+                int check;
+                MPI_Send(&ising_lattice_node_segment[0],chunksize,MPI_INT,MASTER,messageTag[2],MPI_COMM_WORLD);
+                //printf("Sent %d elements from rank %d\n",chunksize,taskid);
+                MPI_Recv(&check,1,MPI_INT,MASTER,messageTag[0],MPI_COMM_WORLD,&status);
             }
 
         }
+
+        free(ising_lattice_node_boundaries);
+        free(ising_lattice_node_segment);
     }
     /*************************OTHER TASK END*************************************/
 
