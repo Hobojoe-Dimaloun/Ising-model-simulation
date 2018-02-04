@@ -294,8 +294,14 @@ int main(int argc,char **argv)
                 for(int i = 0; i < y/gNumOfNodes; i++)
                 {
                     int left, right;
+                    //
+                    // Get left core boundary
+                    //
                     (omp_get_thread_num() == 0) ? (left = gNumOfthreads -1 ) : (left = omp_get_thread_num()-1);
                     ising_lattice_core_boundaries[i] = ising_lattice_node_segment[i * x + x/gNumOfthreads*(left+1)-1 ];
+                    //
+                    // Get right core boundary
+                    //
                     (omp_get_thread_num() == gNumOfthreads-1) ? (right = 0) : (right = omp_get_thread_num()+1);
                     ising_lattice_core_boundaries[i+y/gNumOfNodes] =ising_lattice_node_segment[i * x + x/gNumOfthreads*right];
                 }
@@ -474,8 +480,14 @@ int main(int argc,char **argv)
                 for(int i = 0; i < y/gNumOfNodes; i++)
                 {
                     int left, right;
+                    //
+                    // Get left core boundary
+                    //
                     (omp_get_thread_num() == 0) ? (left = gNumOfthreads -1 ) : (left = omp_get_thread_num()-1);
                     ising_lattice_core_boundaries[i] = ising_lattice_node_segment[i * x + x/gNumOfthreads*(left+1)-1 ];
+                    //
+                    // Get right core boundary
+                    //
                     (omp_get_thread_num() == gNumOfthreads-1) ? (right = 0) : (right = omp_get_thread_num()+1);
                     ising_lattice_core_boundaries[i+y/gNumOfNodes] =ising_lattice_node_segment[i * x + x/gNumOfthreads*right];
                 }
