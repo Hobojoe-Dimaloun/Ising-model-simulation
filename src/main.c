@@ -32,11 +32,11 @@ int main(int argc,char **argv)
 {
     int numOfSpinFlips = 1E6;
     int debug = 0;  // Debug
-    int x = 256; // x - dimension lattice sites
-    int y = 256; // y - dimension lattice sites
+    int x = 64; // x - dimension lattice sites
+    int y = 64; // y - dimension lattice sites
     int z = 1; // z - dimension latties sites
     double temperature = 0.0001; // Kelvin
-    double beta = 1/temperature;
+    double beta =1; //1/temperature;
     int J = 1; // anti/ferromagnetic
     int MPI_error = 0;
     //
@@ -168,6 +168,11 @@ int main(int argc,char **argv)
         // Assign random spins to the lattice, ie 1 or -1
         //
         randLattice(ising_lattice,x,y,z);
+        for( int write = 0; write < x*y*z; write++)
+        {
+            ising_lattice[write] =write;
+
+        }
 
         //
         //  Allocate random number generators
@@ -206,7 +211,7 @@ int main(int argc,char **argv)
         fprintf(output,"\n");
         fflush(output);
 
-        int coreSpinFlip =numOfSpinFlips/(gNumOfNodes*gNumOfthreads);
+        int coreSpinFlip =1;//numOfSpinFlips/(gNumOfNodes*gNumOfthreads);
 
         for(int loop = 0; loop < coreSpinFlip; loop ++)
         {
@@ -275,6 +280,7 @@ int main(int argc,char **argv)
                 MPI_Send(&ising_lattice_node_segment[0],x,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
 
             }
+
             #pragma omp parallel
             {
                 int *ising_lattice_core_boundaries = NULL;
@@ -294,11 +300,26 @@ int main(int argc,char **argv)
                     (omp_get_thread_num() == gNumOfthreads-1) ? (right = 0) : (right = omp_get_thread_num()+1);
                     ising_lattice_core_boundaries[i+y/gNumOfNodes] =ising_lattice_node_segment[i * x + x/gNumOfthreads*right];
                 }
+                if(omp_get_thread_num() == 0)
+                {
+                    for(int l = 0; l < 2*y/gNumOfNodes; l++)
+                    {
+
+
+                        printf("%d ", ising_lattice_core_boundaries[l]);
+                        if(l==y/gNumOfNodes-1)
+                        printf("\n");
+
+
+                    }
+                    fflush(stdout);
+                }
+
 
                 //
                 // Calculate spin flip
                 //
-                energy_comparison(x, y, rndarray[omp_get_thread_num()], ising_lattice_node_segment, ising_lattice_core_boundaries,ising_lattice_node_boundaries, beta,  J, chunksize);
+            //    energy_comparison(x, y, rndarray[omp_get_thread_num()], ising_lattice_node_segment, ising_lattice_core_boundaries,ising_lattice_node_boundaries, beta,  J, chunksize);
 
                 free(ising_lattice_core_boundaries);
             }
@@ -384,7 +405,7 @@ int main(int argc,char **argv)
 
         /*****************MEMORY MANAGEMENT END****************************/
 
-        int coreSpinFlip =numOfSpinFlips/(gNumOfNodes*gNumOfthreads);
+        int coreSpinFlip =1;//numOfSpinFlips/(gNumOfNodes*gNumOfthreads);
 
         for(int loop = 0; loop < coreSpinFlip; loop ++)
         {
@@ -453,6 +474,7 @@ int main(int argc,char **argv)
                 MPI_Send(&ising_lattice_node_segment[0],x,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
 
             }
+
             #pragma omp parallel
             {
                 int *ising_lattice_core_boundaries = NULL;
@@ -477,7 +499,7 @@ int main(int argc,char **argv)
                 // Calculate spin flip
                 //
 
-                energy_comparison(x, y, rndarray[omp_get_thread_num()], ising_lattice_node_segment, ising_lattice_core_boundaries,ising_lattice_node_boundaries, beta,  J, chunksize);
+            //    energy_comparison(x, y, rndarray[omp_get_thread_num()], ising_lattice_node_segment, ising_lattice_core_boundaries,ising_lattice_node_boundaries, beta,  J, chunksize);
                 free(ising_lattice_core_boundaries);
 
             }

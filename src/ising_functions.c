@@ -36,7 +36,10 @@ void randLattice(int *lattice, int x, int y, int z)
 void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int * ising_lattice_core_boundaries,int *ising_lattice_node_boundaries, int beta, int J,int chunksize)
 {
     int location = (double)gsl_rng_uniform(r) * (x /gNumOfthreads) * (y /gNumOfNodes);
+    int columnOffset = x/gNumOfthreads * omp_get_thread_num();
 
+    int icolumn = location%(y /gNumOfNodes); // the remainder is the column number
+    int irow = (location - icolumn)/(x /gNumOfthreads)  ;// number of rows
     int E1=0, E2=0;
     //
     // Calculate spin energy
@@ -45,7 +48,7 @@ void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int * ising
     //
     // Flip spin
     //
-    ising_lattice[location] *=-1 ;
+    ising_lattice[irow * x + icolumn + columnOffset ] *=-1 ;
     //
     // Calcualte new spin-flipped energy
     //
@@ -53,7 +56,7 @@ void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int * ising
     //
     // Keep spin flip with probability determined in spin_flip_check()
     //
-    ising_lattice[location]*=spin_flip_check(E1, E2, beta, r);
+    ising_lattice[irow * x + icolumn + columnOffset ]*=spin_flip_check(E1, E2, beta, r);
 }
 
 
@@ -72,7 +75,7 @@ int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, i
     //
     // Calculate energy of cell above
     //
-/*    (irow == 0) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * nodeBoundaries[columnOffset + icolumn ]*(-1))
+    (irow == 0) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * nodeBoundaries[columnOffset + icolumn ]*(-1))
                 : (energy += J*lattice[irow * x + icolumn + columnOffset ] * lattice[(irow-1)*x + icolumn + columnOffset]*(-1));
 
     //
@@ -96,7 +99,7 @@ int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, i
     (icolumn == (y-1)) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * coreBoundaries[icolumn + y/gNumOfNodes]*(-1))
                     : (energy += J*lattice[irow * x + icolumn + columnOffset ] * lattice[irow*x + icolumn + columnOffset +1]*(-1));
 
-*/
+
     return energy;
 }
 
@@ -115,7 +118,7 @@ int spin_flip_check(int E1, int E2, double beta, gsl_rng *r)
         }
         else
         {
-            return 1;
+            return -1;
         }
     }
     else
