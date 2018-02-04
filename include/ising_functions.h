@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <gsl/gsl_rng.h>
 
-void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int *ising_lattice_core_boundaries,int *ising_lattice_node_boundaries, int beta, int J,int chunksize);
+void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int *ising_lattice_core_boundaries,int *ising_lattice_node_boundaries, double beta, int J,int chunksize);
 
 void randLattice(int *lattice, int x, int y, int z);
 
