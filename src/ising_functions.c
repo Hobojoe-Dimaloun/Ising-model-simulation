@@ -48,7 +48,6 @@ void energy_comparison(int x_Max, int y_Max, int z_Max, gsl_rng *r, int *ising_l
     // Calculate spin energy
     //
     E1 = energy_calculation(ising_lattice,ising_lattice_core_boundaries,ising_lattice_node_boundaries, location, x_Max,  y_Max, z_Max, J);
-//    printf("E1 %d\n",E1 );
     //
     // Flip spin
     //
@@ -84,29 +83,24 @@ int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, i
     (y == 0) ? (energy += J*lattice[offsetLocation  ] * nodeBoundaries[columnOffset + x +z*x_Max]*(-1) )
                 : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset,  y - 1,  z)]*(-1));
 
-//printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[(irow-1)*x + icolumn + columnOffset]);
-
-    //          printf("%d : \n",J*lattice[irow * x + icolumn + columnOffset ], nodeBoundaries[columnOffset + icolumn ]);
+    //
     // Calculate energy of cell below
     //
     (y == (y_Max/gNumOfNodes-1)) ? (energy += J*lattice[offsetLocation  ] * nodeBoundaries[(columnOffset + x + z*x_Max)+x_Max*z_Max]*(-1))
                     : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset,  y+1,  z)]*(-1));
 
-//printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[(irow+1)*x + icolumn + columnOffset]);
     //
     // Calculate energy of cell left
     //
 
     (x == 0) ? (energy += J*lattice[offsetLocation  ] * coreBoundaries[y + z*y_Max/gNumOfNodes ]*(-1))
                     : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset -1,  y,  z)]*(-1));
-//printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ],lattice[irow*x + icolumn + columnOffset -1]);
     //
     // Calculate energy of cell right
     //
 
     (x == (x_Max-1)) ? (energy += J*lattice[offsetLocation ] * coreBoundaries[y + z*y_Max/gNumOfNodes +(y_Max/gNumOfNodes)*z_Max]*(-1))
                     : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset +1,  y,  z)]*(-1));
-                    //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[irow*x + icolumn + columnOffset +1]);
     if( z_Max > 1)
     {
         //
