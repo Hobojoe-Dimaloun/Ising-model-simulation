@@ -112,12 +112,12 @@ int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, i
         //
         // Calculate energy of cell front
         //
-        (z == 0) ? (energy += J*lattice[offsetLocation  ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z_Max -1)])
+        (z == 0) ? (energy += J*lattice[offsetLocation  ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z_Max -1)]*(-1))
                             : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z+1)]*(-1));
         //
         // Calculate energy of cell behind
         //
-        (z == (z_Max-1)) ? (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  0)])
+        (z == (z_Max-1)) ? (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  0)]*(-1))
                         : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z-1)]*(-1));
     }
     return energy;

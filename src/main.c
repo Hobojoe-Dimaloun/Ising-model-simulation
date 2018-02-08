@@ -30,7 +30,7 @@ int gNumOfthreads ;
 
 int main(int argc,char **argv)
 {
-    int numOfSpinFlips = 1E5;
+    int numOfSpinFlips = 1E6;
     int debug = 0;  // Debug
     int x_Max = 32; // x - dimension lattice sites
     int y_Max = 32; // y - dimension lattice sites
@@ -344,50 +344,84 @@ int main(int argc,char **argv)
                 double magnetisation2 = 0;
                 double energy = 0;
                 double energy2 =0;
-                for( int write = 0; write < x_Max*y_Max*z_Max; write++)
+                for( int write = 0; write <x_Max*y_Max*z_Max; write++)
                 {
                     magnetisation +=ising_lattice[write];
                 //    printf("magnetisation %f, loop %d\n",magnetisation, write );
                     magnetisation2 += (ising_lattice[write]*ising_lattice[write]);
 
-                    int icolumn = write%(x_Max); // the remainder is the column number
-                    int irow = (write - icolumn)/(x_Max) ;// number of rows
+
+                    int x,y,z;
+                    coordinates_from_linear_index(write,x_Max,y_Max,&x, &y, &z);
+
+
                     int temp=0;
                     int temp2=0;
 
-                    (irow == 0) ? (temp += J*ising_lattice[irow * x_Max + icolumn] * ising_lattice[x_Max*y_Max*z_Max -x_Max +icolumn ]*(-1) )
-                                : (temp += J*ising_lattice[irow * x_Max + icolumn] * ising_lattice[(irow-1)*x_Max + icolumn ]*(-1));
+                    (y == 0) ? (temp = J*ising_lattice[write] * ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  x ,  y_Max -1 ,  z)]*(-1) )
+                                : (temp = J*ising_lattice[write] * ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  x ,  y-1 ,  z)]*(-1));
                                 temp2 +=temp;
+
+                            //    printf("%d   %d   %d   %d  %d\n",write, ising_lattice[write],x,y,z);
+                        //    fprintf(output,"energy %d\n",temp2);
+
+
+                        //        printf("energy %d\n",temp);
+                            //    fflush(stdout);
                 //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[(irow-1)*x + icolumn + columnOffset]);
 
                     //          printf("%d : \n",J*lattice[irow * x + icolumn + columnOffset ], nodeBoundaries[columnOffset + icolumn ]);
                     // Calculate energy of cell below
                     //
-                    (irow == (x_Max-1)) ? (temp += J*ising_lattice[irow * x_Max + icolumn  ] * ising_lattice[icolumn]*(-1))
-                                    : (temp += J*ising_lattice[irow * x_Max + icolumn  ] * ising_lattice[(irow+1)*x_Max + icolumn ]*(-1));
+                    (y == (y_Max-1)) ? (temp = J*ising_lattice[write] * ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  x , 0 ,  z)]*(-1))
+                                    : (temp = J*ising_lattice[write] * ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  x ,  y+1 ,  z)]*(-1));
                                     temp2 +=temp;
+                                //    printf("%d   %d   %d   %d  %d   %d  %d\n",write, ising_lattice[write],x,y,z,linear_index_from_coordinates(x_Max, y_Max,  0 ,  y ,  z),ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  x , 0 ,  z)]);
+
+//fprintf(output,"energy %d\n",temp);
+                                //    printf("energy %d\n",temp);
+                                //    fflush(stdout);
                 //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[(irow+1)*x + icolumn + columnOffset]);
                     //
                     // Calculate energy of cell left
                     //
 
-                    (icolumn == 0) ? (temp += J*ising_lattice[irow * x_Max + icolumn   ] * ising_lattice[irow*x_Max + x_Max -1]*(-1))
-                                    : (temp += J*ising_lattice[irow * x_Max + icolumn  ] * ising_lattice[irow*x_Max + icolumn -1]*(-1));
+                    (x == 0) ? (temp = J*ising_lattice[write] * ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  x_Max -1 ,  y ,  z)]*(-1))
+                                    : (temp = J*ising_lattice[write] * ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  x-1 ,  y ,  z)]*(-1));
                 //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ],lattice[irow*x + icolumn + columnOffset -1]);
                     //
                     // Calculate energy of cell right
                     //
                     temp2 +=temp;
-                    (icolumn == (y_Max-1)) ? (temp += J*ising_lattice[irow * x_Max + icolumn   ] * ising_lattice[irow*x_Max]*(-1))
-                                    : (temp += J*ising_lattice[irow * x_Max + icolumn  ] * ising_lattice[irow*x_Max + icolumn +1]*(-1));
+//fprintf(output,"energy %d\n",temp);
+
+                        //    printf("energy %d\n",temp);
+                        //    fflush(stdout);
+                    (x == (x_Max-1)) ? (temp = J*ising_lattice[write] * ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  0 ,  y ,  z)]*(-1))
+                                    : (temp = J*ising_lattice[write] * ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  x+1 ,  y ,  z)]*(-1));
                                     //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[irow*x + icolumn + columnOffset +1]);
                     temp2 +=temp;
+                //    fprintf(output,"energy %d\n",temp);
+                //    printf("energy %d\n",temp);
+                //    fflush(stdout);
+                        //printf("%d   %d   %d   %d  %d   %d  %d\n",write, ising_lattice[write],x,y,z,linear_index_from_coordinates(x_Max, y_Max,  0 ,  y ,  z),ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  0 ,  y ,  z)]);
+                    if(z_Max>1)
+                    {
+                        (z == 0) ? (energy += J*ising_lattice[write  ] * ising_lattice[linear_index_from_coordinates(x_Max,x,  x ,  y,  z_Max -1)]*(-1))
+                                            : (energy += J*ising_lattice[write ] * ising_lattice[linear_index_from_coordinates(x_Max,y_Max,  x  ,  y,  z+1)]*(-1));
+                                            temp2 +=temp;
+                        //
+                        // Calculate energy of cell behind
+                        //
+                        (z == (z_Max-1)) ? (energy += J*ising_lattice[write ] * ising_lattice[linear_index_from_coordinates(x_Max,y_Max,  x,  y,  0)]*(-1))
+                                        : (energy += J*ising_lattice[write ] * ising_lattice[linear_index_from_coordinates(x_Max,y_Max,  x ,  y,  z-1)]*(-1));
+                                        temp2 +=temp;
 
-
-                    
-
-
-
+                    }
+                //    fprintf(output,"energy %d\n",temp2);
+                    //    fflush(output);
+                //    printf("energy %d\n",temp2);
+                //    fflush(stdout);
                     energy +=0.5*(double)temp2 ;
                     energy2+= pow(0.5*(double)temp2,2);
 
