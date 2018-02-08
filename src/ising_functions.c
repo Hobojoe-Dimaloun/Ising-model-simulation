@@ -81,7 +81,7 @@ int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, i
     //
     // Calculate energy of cell above
     //
-    (y == 0) ? (energy += J*lattice[offsetLocation  ] * nodeBoundaries[columnOffset + x +z*x_Max*y_Max]*(-1) )
+    (y == 0) ? (energy += J*lattice[offsetLocation  ] * nodeBoundaries[columnOffset + x +z*x_Max]*(-1) )
                 : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset,  y - 1,  z)]*(-1));
 
 //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[(irow-1)*x + icolumn + columnOffset]);
@@ -89,7 +89,7 @@ int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, i
     //          printf("%d : \n",J*lattice[irow * x + icolumn + columnOffset ], nodeBoundaries[columnOffset + icolumn ]);
     // Calculate energy of cell below
     //
-    (y == (y_Max/gNumOfNodes-1)) ? (energy += J*lattice[offsetLocation  ] * nodeBoundaries[(columnOffset + x + z*x_Max*y_Max)+x_Max*z_Max]*(-1))
+    (y == (y_Max/gNumOfNodes-1)) ? (energy += J*lattice[offsetLocation  ] * nodeBoundaries[(columnOffset + x + z*x_Max)+x_Max*z_Max]*(-1))
                     : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset,  y+1,  z)]*(-1));
 
 //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[(irow+1)*x + icolumn + columnOffset]);
@@ -105,7 +105,7 @@ int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, i
     //
 
     (x == (x_Max-1)) ? (energy += J*lattice[offsetLocation ] * coreBoundaries[y + z*y_Max/gNumOfNodes +(y_Max/gNumOfNodes)*z_Max]*(-1))
-                    : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z)]*(-1));
+                    : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset +1,  y,  z)]*(-1));
                     //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[irow*x + icolumn + columnOffset +1]);
     if( z_Max > 1)
     {
@@ -113,12 +113,12 @@ int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, i
         // Calculate energy of cell front
         //
         (z == 0) ? (energy += J*lattice[offsetLocation  ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z_Max -1)]*(-1))
-                            : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z+1)]*(-1));
+                            : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z-1)]*(-1));
         //
         // Calculate energy of cell behind
         //
         (z == (z_Max-1)) ? (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  0)]*(-1))
-                        : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z-1)]*(-1));
+                        : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z+1)]*(-1));
     }
     return energy;
 }

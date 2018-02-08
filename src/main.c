@@ -17,6 +17,7 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_errno.h>
 #include <mpi.h>
+#include <stdbool.h>
 
 #include "ising_functions.h"
 
@@ -34,7 +35,7 @@ int main(int argc,char **argv)
     int debug = 0;  // Debug
     int x_Max = 32; // x - dimension lattice sites
     int y_Max = 32; // y - dimension lattice sites
-    int z_Max = 1; // z - dimension latties sites
+    int z_Max = 32; // z - dimension latties sites
     double temperature =0.001; // Kelvin
     double tempmax =6;
     double tempdelta =0.1;
@@ -43,6 +44,7 @@ int main(int argc,char **argv)
     //
     // Handle input arguments
     //
+    bool isFirstLoop = true ;
     for(int i = 0; i < argc; i++)
     {
         switch (i)
@@ -79,6 +81,7 @@ int main(int argc,char **argv)
     if((x_Max*y_Max*z_Max)%gNumOfNodes != 0 || (((x_Max*y_Max*z_Max)%gNumOfNodes))%gNumOfthreads!=0)
     {
         printf("Exit: Grid size not evenly divisable by number of threads times nodes\n");
+        fflush(stdout);
         MPI_Abort(MPI_COMM_WORLD, MPI_error);
         return 0;
     }
@@ -113,7 +116,8 @@ int main(int argc,char **argv)
         /*************************MASTER TASK*********************************/
         if(taskid == MASTER)
         {
-            printf("T = %lf\n",temperature );
+            printf("Started\n" );
+            fflush(stdout);
             /*****************INITIALISE FILE****************************/
             FILE *output = NULL ;
 
@@ -208,14 +212,20 @@ int main(int argc,char **argv)
         /*   {
                 fprintf(output,"%d ",ising_lattice[write]);
 
-            }
-            fprintf(output,"\n");
-            fflush(output);*/
+            }*/
+            //printf("Loop reached.\n");
+        //    fflush(stdout);
+
             while(temperature < tempmax)
             {
                 double beta=1/temperature;
                 int coreSpinFlip =numOfSpinFlips/(gNumOfNodes*gNumOfthreads);
 
+                if(isFirstLoop == true)
+                {
+                    coreSpinFlip = 1E7/(gNumOfNodes*gNumOfthreads);
+                    isFirstLoop = false ;
+                }
                 for(int loop = 0; loop < coreSpinFlip; loop ++)
                 {
                     //
@@ -281,6 +291,8 @@ int main(int argc,char **argv)
                         MPI_Send(&ising_lattice_node_segment[0],x_Max*z_Max,MPI_INT,send ,messageTag[3],MPI_COMM_WORLD);
 
                     }
+                    //printf("Node halos sent.\n");
+                    //fflush(stdout);
 
                     #pragma omp parallel
                     {
@@ -298,22 +310,29 @@ int main(int argc,char **argv)
                             for(int j = 0; j < z_Max; j++)
                             {
                                 int left, right, offset;
+
                                 //
                                 // Get left core boundary
                                 //
                                 (omp_get_thread_num() == 0) ? (left = gNumOfthreads -1 ) : (left = omp_get_thread_num()-1);
                                 offset = x_Max/gNumOfthreads*(left+1);
-                                ising_lattice_core_boundaries[i] = ising_lattice_node_segment[i * x_Max + j*x_Max*y_Max +  offset-1 ];
+                                                                                                    //return x+x_Max*y+x_Max*y_Max*z;
+                                ising_lattice_core_boundaries[j*y_Max/gNumOfNodes +i] = ising_lattice_node_segment[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  offset-1,  i, j)];
+                                //linear_index_from_coordinates(y_Max/gNumOfNodes,1,  offset-1,  i, j)
+
+                            //    printf ("1st, core %d\n", omp_get_thread_num());
+
                                 //
                                 // Get right core boundary
                                 //
                                 (omp_get_thread_num() == gNumOfthreads-1) ? (right = 0) : (right = omp_get_thread_num()+1);
 
                                 offset = x_Max/gNumOfthreads*(right);
-                                ising_lattice_core_boundaries[i+y_Max/gNumOfNodes] =ising_lattice_node_segment[i * x_Max + j*x_Max*y_Max + offset];
+                                ising_lattice_core_boundaries[j*y_Max/gNumOfNodes +i +y_Max/gNumOfNodes*z_Max]=ising_lattice_node_segment[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  offset,  i, j)];
+                            //    printf ("2nd, core %d \n",omp_get_thread_num());
                             }
                         }
-
+                        //printf("Core haloes, %d\n", omp_get_thread_num());
 
 
                         //
@@ -323,9 +342,15 @@ int main(int argc,char **argv)
 
                         free(ising_lattice_core_boundaries);
                     }
+                //    printf("Spins flipped.\n");
+                //    fflush(stdout);
 
                 }
+                printf("master collection reached\n");
+                fflush(stdout);
 
+                //("Loop Exit.\n");
+                //fflush(stdout);
                 for(int task = 1; task<gNumOfNodes; task++)
                 {
                     MPI_Recv(&ising_lattice[task*chunksize],chunksize,MPI_INT,task,messageTag[2],MPI_COMM_WORLD,&status);
@@ -334,6 +359,7 @@ int main(int argc,char **argv)
                 //    fflush(stdout);
 
                 }
+
                 for( int write = 0; write < chunksize; write++)
                 {
                     ising_lattice[write] =ising_lattice_node_segment[write];
@@ -344,6 +370,9 @@ int main(int argc,char **argv)
                 double magnetisation2 = 0;
                 double energy = 0;
                 double energy2 =0;
+
+            //    printf("Calculation loop start.\n");
+            //    fflush(stdout);
                 for( int write = 0; write <x_Max*y_Max*z_Max; write++)
                 {
                     magnetisation +=ising_lattice[write];
@@ -407,14 +436,18 @@ int main(int argc,char **argv)
                         //printf("%d   %d   %d   %d  %d   %d  %d\n",write, ising_lattice[write],x,y,z,linear_index_from_coordinates(x_Max, y_Max,  0 ,  y ,  z),ising_lattice[linear_index_from_coordinates(x_Max, y_Max,  0 ,  y ,  z)]);
                     if(z_Max>1)
                     {
+
+                        //
+                        // Calculate energy of cell infront
+                        //
                         (z == 0) ? (energy += J*ising_lattice[write  ] * ising_lattice[linear_index_from_coordinates(x_Max,x,  x ,  y,  z_Max -1)]*(-1))
-                                            : (energy += J*ising_lattice[write ] * ising_lattice[linear_index_from_coordinates(x_Max,y_Max,  x  ,  y,  z+1)]*(-1));
+                                            : (energy += J*ising_lattice[write ] * ising_lattice[linear_index_from_coordinates(x_Max,y_Max,  x  ,  y,  z-1)]*(-1));
                                             temp2 +=temp;
                         //
                         // Calculate energy of cell behind
                         //
                         (z == (z_Max-1)) ? (energy += J*ising_lattice[write ] * ising_lattice[linear_index_from_coordinates(x_Max,y_Max,  x,  y,  0)]*(-1))
-                                        : (energy += J*ising_lattice[write ] * ising_lattice[linear_index_from_coordinates(x_Max,y_Max,  x ,  y,  z-1)]*(-1));
+                                        : (energy += J*ising_lattice[write ] * ising_lattice[linear_index_from_coordinates(x_Max,y_Max,  x ,  y,  z+1)]*(-1));
                                         temp2 +=temp;
 
                     }
@@ -431,7 +464,7 @@ int main(int argc,char **argv)
                 energy2/=(double)(x_Max*y_Max*z_Max);
                 energy/=(double)(x_Max*y_Max*z_Max);
                 double Susceptability = (magnetisation2 - magnetisation*magnetisation)*beta;
-                double heat_capacity = (energy2 - energy*energy)*beta*beta/(x_Max*y_Max*z_Max);
+                double heat_capacity = (energy2 - energy*energy)*beta*beta;//(x_Max*y_Max*z_Max);
                 fprintf(output,"%lf\t%lf\t%lf\t%lf\t%lf\n",temperature,energy,fabs(magnetisation),Susceptability,heat_capacity);
                 fflush(output);
             /*    for(int write = 0; write<x*y*z; write++)
@@ -509,6 +542,11 @@ int main(int argc,char **argv)
                 double beta=1/temperature;
                 int coreSpinFlip =numOfSpinFlips/(gNumOfNodes*gNumOfthreads);
 
+                if(isFirstLoop == true)
+                {
+                    coreSpinFlip = 1E7/(gNumOfNodes*gNumOfthreads);
+                    isFirstLoop = false ;
+                }
                 for(int loop = 0; loop < coreSpinFlip; loop ++)
                 {
                         //printf("loop %d\n",loop);
@@ -593,19 +631,26 @@ int main(int argc,char **argv)
                             for(int j = 0; j < z_Max; j++)
                             {
                                 int left, right, offset;
+
                                 //
                                 // Get left core boundary
                                 //
                                 (omp_get_thread_num() == 0) ? (left = gNumOfthreads -1 ) : (left = omp_get_thread_num()-1);
                                 offset = x_Max/gNumOfthreads*(left+1);
-                                ising_lattice_core_boundaries[i] = ising_lattice_node_segment[i * x_Max + j*x_Max*y_Max +  offset-1 ];
+                                                                                                    //return x+x_Max*y+x_Max*y_Max*z;
+                                ising_lattice_core_boundaries[j*y_Max/gNumOfNodes +i] = ising_lattice_node_segment[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  offset-1,  i, j)];
+                                //linear_index_from_coordinates(y_Max/gNumOfNodes,1,  offset-1,  i, j)
+
+                            //    printf ("1st, core %d\n", omp_get_thread_num());
+
                                 //
                                 // Get right core boundary
                                 //
                                 (omp_get_thread_num() == gNumOfthreads-1) ? (right = 0) : (right = omp_get_thread_num()+1);
 
                                 offset = x_Max/gNumOfthreads*(right);
-                                ising_lattice_core_boundaries[i+y_Max/gNumOfNodes] =ising_lattice_node_segment[i * x_Max + j*x_Max*y_Max + offset];
+                                ising_lattice_core_boundaries[j*y_Max/gNumOfNodes +i +y_Max/gNumOfNodes*z_Max]=ising_lattice_node_segment[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  offset,  i, j)];
+                            //    printf ("2nd, core %d \n",omp_get_thread_num());
                             }
                         }
 
