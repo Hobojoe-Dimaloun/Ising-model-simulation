@@ -33,33 +33,36 @@ void randLattice(int *lattice, int x, int y, int z)
 // Perform energy comparison
 //
 
-void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int * ising_lattice_core_boundaries,int *ising_lattice_node_boundaries, double beta, int J,int chunksize)
+void energy_comparison(int x_Max, int y_Max, int z_Max, gsl_rng *r, int *ising_lattice, int * ising_lattice_core_boundaries,int *ising_lattice_node_boundaries, double beta, int J,int chunksize)
 {
-    int location = (double)gsl_rng_uniform(r) * (x /gNumOfthreads) * (y /gNumOfNodes);
-    int columnOffset = (x/gNumOfthreads) * omp_get_thread_num();
+    int location = (double)gsl_rng_uniform(r) * (x_Max /gNumOfthreads) * (y_Max /gNumOfNodes) *z_Max;
 
-    int icolumn = location%(x /gNumOfthreads); // the remainder is the column number
-    int irow = (location - icolumn)/(x /gNumOfthreads);// number of rows
     int E1=0, E2=0;
+
+    int columnOffset = x_Max/gNumOfthreads * omp_get_thread_num();
+
+    int x,y,z;
+    coordinates_from_linear_index(location,x_Max/gNumOfthreads, y_Max/gNumOfNodes, &x, &y, &z);
+    int offsetLocation = linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset,  y,  z);
     //
     // Calculate spin energy
     //
-    E1 = energy_calculation(ising_lattice,ising_lattice_core_boundaries,ising_lattice_node_boundaries, location, x,  y, J);
+    E1 = energy_calculation(ising_lattice,ising_lattice_core_boundaries,ising_lattice_node_boundaries, location, x_Max,  y_Max, z_Max, J);
 //    printf("E1 %d\n",E1 );
     //
     // Flip spin
     //
-    ising_lattice[irow * x + icolumn + columnOffset ] *=-1 ;
+    ising_lattice[offsetLocation ] *=-1 ;
     //
     // Calcualte new spin-flipped energy
     //
-    E2= energy_calculation(ising_lattice,ising_lattice_core_boundaries, ising_lattice_node_boundaries, location,x,  y, J);
+    E2= energy_calculation(ising_lattice,ising_lattice_core_boundaries, ising_lattice_node_boundaries, location, x_Max,  y_Max, z_Max, J);
     //printf("E2 %d\n",E2 );
 
     //
     // Keep spin flip with probability determined in spin_flip_check()
     //
-    ising_lattice[irow * x + icolumn + columnOffset ]*=spin_flip_check(E1, E2, beta, r);
+    ising_lattice[offsetLocation]*=spin_flip_check(E1, E2, beta, r);
 }
 
 
@@ -67,44 +70,56 @@ void energy_comparison(int x, int y, gsl_rng *r, int *ising_lattice, int * ising
 // Calculates the energy due to the surrounding cells
 //
 
-int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, int location, int x, int y, int J)
+int energy_calculation(int *lattice, int *coreBoundaries, int *nodeBoundaries, int location, int x_Max, int y_Max, int z_Max, int J)
 {
-
-    int icolumn = location%(x /gNumOfthreads); // the remainder is the column number
-    int irow = (location - icolumn)/(x /gNumOfthreads) ;// number of rows
-    int temp;
     int energy = 0;
-    int columnOffset = x/gNumOfthreads * omp_get_thread_num();
+    int columnOffset = x_Max/gNumOfthreads * omp_get_thread_num();
+
+    int x,y,z;
+    coordinates_from_linear_index(location,x_Max/gNumOfthreads, y_Max/gNumOfNodes, &x, &y, &z);
+    int offsetLocation = linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset,  y,  z);
     //
     // Calculate energy of cell above
     //
-    (irow == 0) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * nodeBoundaries[columnOffset + icolumn ]*(-1) )
-                : (energy += J*lattice[irow * x + icolumn + columnOffset ] * lattice[(irow-1)*x + icolumn + columnOffset]*(-1));
+    (y == 0) ? (energy += J*lattice[offsetLocation  ] * nodeBoundaries[columnOffset + x +z*x_Max*y_Max]*(-1) )
+                : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset,  y - 1,  z)]*(-1));
 
 //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[(irow-1)*x + icolumn + columnOffset]);
 
     //          printf("%d : \n",J*lattice[irow * x + icolumn + columnOffset ], nodeBoundaries[columnOffset + icolumn ]);
     // Calculate energy of cell below
     //
-    (irow == (x-1)) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * nodeBoundaries[columnOffset + icolumn + x]*(-1))
-                    : (energy += J*lattice[irow * x + icolumn + columnOffset ] * lattice[(irow+1)*x + icolumn + columnOffset]*(-1));
+    (y == (y_Max/gNumOfNodes-1)) ? (energy += J*lattice[offsetLocation  ] * nodeBoundaries[(columnOffset + x + z*x_Max*y_Max)+x_Max*z_Max]*(-1))
+                    : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset,  y+1,  z)]*(-1));
 
 //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[(irow+1)*x + icolumn + columnOffset]);
     //
     // Calculate energy of cell left
     //
 
-    (icolumn == 0) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * coreBoundaries[icolumn]*(-1))
-                    : (energy += J*lattice[irow * x + icolumn + columnOffset ] * lattice[irow*x + icolumn + columnOffset -1]*(-1));
+    (x == 0) ? (energy += J*lattice[offsetLocation  ] * coreBoundaries[y + z*y_Max/gNumOfNodes ]*(-1))
+                    : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset -1,  y,  z)]*(-1));
 //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ],lattice[irow*x + icolumn + columnOffset -1]);
     //
     // Calculate energy of cell right
     //
 
-    (icolumn == (y-1)) ? (energy += J*lattice[irow * x + icolumn + columnOffset  ] * coreBoundaries[icolumn + y/gNumOfNodes]*(-1))
-                    : (energy += J*lattice[irow * x + icolumn + columnOffset ] * lattice[irow*x + icolumn + columnOffset +1]*(-1));
+    (x == (x_Max-1)) ? (energy += J*lattice[offsetLocation ] * coreBoundaries[y + z*y_Max/gNumOfNodes +(y_Max/gNumOfNodes)*z_Max]*(-1))
+                    : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z)]*(-1));
                     //printf("%d : %d\n",lattice[irow * x + icolumn + columnOffset ], lattice[irow*x + icolumn + columnOffset +1]);
-
+    if( z_Max > 1)
+    {
+        //
+        // Calculate energy of cell front
+        //
+        (z == 0) ? (energy += J*lattice[offsetLocation  ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z_Max -1)])
+                            : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z+1)]*(-1));
+        //
+        // Calculate energy of cell behind
+        //
+        (z == (z_Max-1)) ? (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  0)])
+                        : (energy += J*lattice[offsetLocation ] * lattice[linear_index_from_coordinates(x_Max,y_Max/gNumOfNodes,  x + columnOffset ,  y,  z-1)]*(-1));
+    }
     return energy;
 }
 
@@ -130,4 +145,18 @@ int spin_flip_check(int E1, int E2, double beta, gsl_rng *r)
     {
         return 1;
     }
+}
+
+int linear_index_from_coordinates(int x_Max,int y_Max, int x, int y, int z)
+{
+    return x+x_Max*y+x_Max*y_Max*z;
+}
+
+void coordinates_from_linear_index(int location,int x_Max,int y_Max, int *x, int *y, int *z)
+{
+     *x = location%x_Max;
+     location=(location - *x)/x_Max;
+     *y = location%y_Max;
+     location=(location-*y)/y_Max;
+     *z = location;
 }
