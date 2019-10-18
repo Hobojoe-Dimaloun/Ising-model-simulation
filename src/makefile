@@ -5,12 +5,12 @@ CFLAGS=-Wall -g -fopenmp -I$(IDIR) -IC:/GSL/include
 ODIR=obj
 LDIR =../lib
 
-LIBS=-lm -lgsl -lgslcblas -L$(LDIR) -LC:/GSL/lib
+LIBS=-lm -lgsl -lgslcblas -lmsmpi -L$(LDIR) -LC:/GSL/lib
 
-_DEPS =
+_DEPS = ising_functions.h
 DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))
 
-_OBJ = main.o
+_OBJ = ising_functions.o main.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 
@@ -18,7 +18,7 @@ $(ODIR)/%.o: %.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 ../bin/executable: $(OBJ)
-	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
 
 .PHONY: clean
 
